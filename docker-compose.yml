@@ -1,0 +1,402 @@
+networks:
+  frontend:
+    external: true
+  app:
+    driver: bridge
+    internal: false
+
+services:
+  openwebui:
+    build:
+      dockerfile: Dockerfile
+      context: open-webui
+      args:
+        USE_CUDA: false
+        USE_OLLAMA: false
+        USE_SLIM: true
+    command: [ "bash", "start.sh"]
+    environment:
+      # See https://docs.openwebui.com/getting-started/env-configuration/
+      GLOBAL_LOG_LEVEL: ${GLOBAL_LOG_LEVEL:-INFO}
+      DATA_DIR: /app/backend/data
+      ENV: ${ENV_MODE:-dev}
+      PORT: 8080
+      WEBUI_NAME: "OS2ai Platform"
+      WEBUI_URL: "https://${COMPOSE_DOMAIN}"
+      CORS_ALLOW_ORIGIN: ${CORS_ALLOW_ORIGIN:-*}
+      USER_AGENT: ${USER_AGENT:-'OS2ai platformen'}
+      ENABLE_PERSISTENT_CONFIG: ${ENABLE_PERSISTENT_CONFIG:-false}
+      ENABLE_PUBLIC_ACTIVE_USERS_COUNT: ${ENABLE_PUBLIC_ACTIVE_USERS_COUNT:-false}
+      ENABLE_USER_STATUS: ${ENABLE_USER_STATUS:-false}
+      DEFAULT_GROUP_SHARE_PERMISSION: ${DEFAULT_GROUP_SHARE_PERMISSION:-members}
+      # Admin user setup
+      WEBUI_ADMIN_NAME: "admin"
+      WEBUI_ADMIN_EMAIL: ${WEBUI_ADMIN_EMAIL:?}
+      WEBUI_ADMIN_PASSWORD: ${WEBUI_ADMIN_PASSWORD:?}
+      ENABLE_ADMIN_CHAT_ACCESS: ${ENABLE_ADMIN_CHAT_ACCESS:-false}
+      # Language/local
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-en-GB}
+      # OPEN TELEMETRY
+      ENABLE_OTEL: ${ENABLE_OTEL:-false}
+      ENABLE_OTEL_METRICS: ${ENABLE_OTEL_METRICS:-false}
+      ENABLE_OTEL_TRACES: ${ENABLE_OTEL_TRACES:-false}
+      ENABLE_OTEL_LOGS: ${ENABLE_OTEL_LOGS:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-alloy:4317}
+      OTEL_EXPORTER_OTLP_INSECURE: ${OTEL_EXPORTER_OTLP_INSECURE-false}
+      OTEL_BASIC_AUTH_USERNAME: ${OTEL_BASIC_AUTH_USERNAME-""}
+      OTEL_BASIC_AUTH_PASSWORD: ${OTEL_BASIC_AUTH_PASSWORD-""}
+      # OIDC
+      ENABLE_SIGNUP: ${ENABLE_SIGNUP:-false}
+      ENABLE_LOGIN_FORM: ${ENABLE_LOGIN_FORM:-false}
+      ENABLE_OAUTH_SIGNUP: true
+      OAUTH_MERGE_ACCOUNTS_BY_EMAIL: true
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET}
+      OPENID_PROVIDER_URL: ${OPENID_PROVIDER_URL}
+      OAUTH_PROVIDER_NAME: ${OAUTH_PROVIDER_NAME}
+      ENABLE_OAUTH_ID_TOKEN_COOKIE: ${ENABLE_OAUTH_ID_TOKEN_COOKIE:-false}
+      OAUTH_ALLOWED_DOMAINS: ${OAUTH_ALLOWED_DOMAINS:-aarhus.dk}
+      ENABLE_STAR_SESSIONS_MIDDLEWARE: ${ENABLE_STAR_SESSIONS_MIDDLEWARE:-true}
+      OAUTH_GROUP_DEFAULT_SHARE: ${OAUTH_GROUP_DEFAULT_SHARE:-members}
+      # Change the default claims mapping.
+      OAUTH_EMAIL_CLAIM: ${OAUTH_EMAIL_CLAIM:-upn}
+      OAUTH_ROLES_CLAIM: ${OAUTH_ROLES_CLAIM:-role}
+      OAUTH_GROUPS_CLAIM: ${OAUTH_GROUPS_CLAIM:-groups}
+      ENABLE_OAUTH_ROLE_MANAGEMENT: ${ENABLE_OAUTH_ROLE_MANAGEMENT:-true}
+      ENABLE_OAUTH_GROUP_MANAGEMENT: ${ENABLE_OAUTH_GROUP_MANAGEMENT:-true}
+      ENABLE_OAUTH_GROUP_CREATION: ${ENABLE_OAUTH_GROUP_CREATION:-true}
+      OAUTH_ALLOWED_ROLES: ${OAUTH_ALLOWED_ROLES:-admin,builder,user}
+      OAUTH_ADMIN_ROLES: ${OAUTH_ADMIN_ROLES:-admin}
+      WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1d}
+      # RAG embedding
+      RAG_EMBEDDING_ENGINE: "openai"
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-intfloat/multilingual-e5-large}
+      RAG_OPENAI_API_BASE_URL: ${RAG_OPENAI_API_BASE_URL:?}
+      RAG_OPENAI_API_KEY: ${RAG_OPENAI_API_KEY:?}
+      RAG_EMBEDDING_BATCH_SIZE: ${RAG_EMBEDDING_BATCH_SIZE:-64}
+      RAG_SYSTEM_CONTEXT: ${RAG_SYSTEM_CONTEXT:-false}
+      CHUNK_SIZE: ${CHUNK_SIZE:-500}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-100}
+      RAG_TEXT_SPLITTER: ${RAG_TEXT_SPLITTER:-token}
+      RAG_TOKENIZER_MODEL: ${RAG_TOKENIZER_MODEL:-intfloat/multilingual-e5-large}
+      ENABLE_ASYNC_EMBEDDING: ${ENABLE_ASYNC_EMBEDDING:-true}
+      ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER: ${ENABLE_MARKDOWN_HEADER_TEXT_SPLITTER:-true}
+      # Disable ollama as default, prevent UI from freezing when not available on localhost.
+      ENABLE_OLLAMA_API: false
+      OLLAMA_BASE_URL: 'http://localhost:11434'
+      # Enable OpenAI.
+      ENABLE_OPENAI_API: true
+      OPENAI_API_BASE_URLS: ${OPENAI_API_BASE_URLS:?}
+      OPENAI_API_KEYS: ${OPENAI_API_KEYS:?}
+      # Model settings
+      DEFAULT_MODEL_PARAMS: '{"function_calling": "native"}'
+      # Disable direct connections (do not allow users to connect to new servers)
+      ENABLE_DIRECT_CONNECTIONS: ${ENABLE_DIRECT_CONNECTIONS:-false}
+      # User profile notification webhooks
+      ENABLE_USER_WEBHOOKS: ${ENABLE_USER_WEBHOOKS:-false}
+      # Enable api key (for users)
+      ENABLE_API_KEYS: ${ENABLE_API_KEYS:-true}
+      ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS: ${ENABLE_API_KEYS_ENDPOINT_RESTRICTIONS:-true}
+      API_KEYS_ALLOWED_ENDPOINTS: ${API_KEYS_ALLOWED_ENDPOINTS:-/api/v1/retrieval/,/api/v1/auths/,/api/v1/models,/api/models,/api/v1/models/base,/api/models/base,/api/chat/completions,/api/v1/chat/completions,/health,/api/v1/knowledge,/api/v1/files,/api/v1/chats}
+      # Sharing
+      ENABLE_COMMUNITY_SHARING: ${ENABLE_COMMUNITY_SHARING:-false}
+      # Disable image capture
+      USER_PERMISSIONS_CHAT_IMAGE_CAPTURE: ${USER_PERMISSIONS_CHAT_IMAGE_CAPTURE:-false}
+      # Postgres setup
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/postgres
+      # S3 configuration
+      STORAGE_PROVIDER: "s3"
+      S3_ENDPOINT_URL: "http://garage:3900"
+      S3_ACCESS_KEY_ID: ${S3_ROOT_USER:-s3adminkey}
+      S3_SECRET_ACCESS_KEY: ${S3_ROOT_PASSWORD:-s3passwords3password}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME:-openwebui}
+      S3_USE_SSL: "false"
+      # Redis cache
+      REDIS_URL: redis://redis:6379/1
+      ENABLE_WEBSOCKET_SUPPORT: true
+      WEBSOCKET_MANAGER: redis
+      WEBSOCKET_REDIS_URL: redis://redis:6379/0
+      # Default prompts
+      TITLE_GENERATION_PROMPT_TEMPLATE: "### Opgave:\nGenerér en kort, 3-5 ords titel med en emoji, der opsummerer chat-historikken.\n \n### Retningslinjer:\n- Titlen skal tydeligt repræsentere hovedtemaet eller emnet for samtalen.\n- Brug emojis, der understøtter forståelsen af emnet, men undgå citationstegn eller særlig formatering.\n- Skriv titlen på samtalens primære sprog; brug dansk som standard, hvis sproget er blandet.\n- Prioritér præcision frem for overdreven kreativitet; hold det klart og enkelt.\n- Dit svar skal udelukkende bestå af JSON-objektet, uden indledende eller afsluttende tekst.\n- Output skal være ét enkelt råt JSON-objekt, uden markdown-kodeblokke eller anden indkapsling.\n- Sørg for, at der ikke kommer samtaletekst, bekræftelser eller forklaringer før eller efter JSON-outputtet, da dette vil medføre fejl i parsningen.\n \n### Output:\nJSON-format: { \"title\": \"din korte titel her\" }\n \n### Eksempler:\n- { \"title\": \"📉 Tendens i data\" }\n- { \"title\": \"🍪 Dagens kantinemenu\" }\n- { \"title\": \"Musikstreamingens udvikling\" }\n- { \"title\": \"Tips til hjemmearbejde\" }\n- { \"title\": \"Kunstig intelligens i sundhedsvæsenet\" }\n- { \"title\": \"🎮 Indblik i spiludvikling\" }\n \n### Chat-historik:\n<chat_history>\n{{MESSAGES:END:2}}\n</chat_history>"
+      TAGS_GENERATION_PROMPT_TEMPLATE: "### Opgave:\nGenerér 1-3 brede tags, der kategoriserer hovedtemaerne i chat-historikken, samt 1-3 mere specifikke undertags.\n\n### Retningslinjer:\n- Start med overordnede domæner (fx Sundhed, Kultur, Borgerservice, Teknik, Miljø, Omsorg, Sport, Fritid, Administration, Uddannelse).\n- Overvej at inkludere relevante underområder, hvis de er tydeligt repræsenteret i samtalen.\n- Hvis indholdet er for kort (under 3 beskeder) eller for varieret, brug kun [\"Generelt\"].\n- Skriv tags på samtalens primære sprog; brug dansk som standard, hvis sproget er blandet.\n- Prioritér præcision frem for overdreven specificitet.\n\n### Output:\nJSON-format: { \"tags\": [\"tag1\", \"tag2\", \"tag3\"] }\n\n### Chat-historik:\n<chat_history>\n{{MESSAGES:END:6}}\n</chat_history>"
+      FOLLOW_UP_GENERATION_PROMPT_TEMPLATE: "### Opgave:\nForeslå 3-5 relevante opfølgende spørgsmål eller prompts på samtalens primære sprog, som brugeren naturligt kunne stille i denne samtale som **bruger**, baseret på chat-historikken, for at hjælpe med at fortsætte eller uddybe diskussionen.\n\n### Retningslinjer:\n- Skriv alle opfølgende spørgsmål fra brugerens synspunkt, rettet mod assistenten.\n- Gør spørgsmålene korte, klare og direkte relateret til de emner, der er drøftet.\n- Foreslå kun opfølgninger, der giver mening i forhold til indholdet, og undgå gentagelser.\n- Hvis samtalen er meget kort eller ukonkret, foreslå mere generelle (men relevante) opfølgende spørgsmål.\n- Brug samtalens primære sprog; brug dansk som standard, hvis sproget er blandet.\n- Svaret skal være et JSON-array af strenge, uden ekstra tekst eller formattering.\n\n### Output:\nJSON-format: { \"follow_ups\": [\"Spørgsmål 1?\", \"Spørgsmål 2?\", \"Spørgsmål 3?\"] }\n\n### Chat-historik:\n<chat_history>\n{{MESSAGES:END:6}}\n</chat_history>"
+      QUERY_GENERATION_PROMPT_TEMPLATE: |
+        # Opgave
+
+        Du er en assistent til optimering af søgeforespørgsler. Din opgave er at analysere samtalehistorikken og generere 1-3 optimerede søgeforespørgsler til SearXNG, der hjælper med at finde de mest relevante webresultater.
+
+        ## Instruktioner
+
+        1. Brug naturligt dansk sprog (ikke oversat engelsk)
+        2. **Identificer det centrale informationsbehov** - hvilke videnshuller skal udfyldes?
+        3. **Generer 1-3 søgeforespørgsler** som er:
+            - Koncise (typisk 3-6 ord)
+            - Specifikke og målrettede
+            - Fri for samtale-fyld
+            - Fokuseret på fakta der kan findes, ikke meninger
+            - Optimeret til søgemaskiner (ingen spørgsmålstegn, minimale stopord)
+            - Forsøg at fremprovokere søgeresultater fra officielle kilder (kommuner, regioner, statistikker)
+        4. Baser svar på Aarhus såfremt andet ikke er præciseret
+        5. Prioriter resultater fra officielle kilder
+        6. Tilføj årstal hvis der spørges om aktuel information
+
+        Dato: {{CURRENT_DATE}}
+
+        ## Retningslinjer for Optimering af Forespørgsler
+
+        ### GØR:
+        - Brug specifikke navneord, egennavne, tekniske termer
+        - Inkluder relevant år/dato kontekst når aktualitet er vigtig
+        - Kombiner 2-3 nøglebegreber per forespørgsel
+        - Brug branche terminologi
+        - Lav forskellige forespørgsler der dækker forskellige vinkler af emnet
+
+        ### GØR IKKE:
+        - Brug ikke spørgsmål ("hvad er...", "hvordan...")
+        - Inkluder ikke samtalefraser ("jeg vil gerne vide om...")
+        - Brug ikke særlige operatorer medmindre specifikt nødvendigt (citationstegn, site:, osv.)
+        - Gentag ikke lignende forespørgsler
+        - Generer ikke forespørgsler for information der allerede er klart etableret i samtalen
+
+        ## Output Format
+
+        Returner søgeforespørgslerne på følgende format:
+
+        {
+        "queries": ["query1", "query2"]
+        }
+
+        ## Eksempler
+
+        **Samtale kontekst:** Bruger spørger om elbiler i Danmark, har tidligere snakket om bilpriser generelt. Seneste besked: "Hvilke elbiler kan man få til under 300.000 kr?"
+
+        Output:
+        {
+        "queries": ["elbiler under 300000 kr Danmark 2025", "billigste elbiler Danmark", "elbil rækkevidde pris sammenligning"]
+        }
+
+        **Samtale kontekst:** Diskussion om klimaforandringer, tidligere nævnt global opvarmning. Seneste beskeder handler om konkrete løsninger i Danmark.
+
+        Output:
+        {
+        "queries": ["Danmarks klimamål 2030", "grøn omstilling Danmark initiativer", "vedvarende energi Danmark statistik 2025"]
+        }
+
+        **Samtale kontekst:** Lang samtale om madlavning, tidligere diskuteret italiensk mad. Ny retning: "Hvad er den bedste måde at tilberede entrecôte?"
+
+        Output:
+        {
+        "queries": ["entrecôte tilberedning opskrift", "entrecôte stegetid perfekt"]
+        }
+        
+        ## Samtalehistorik
+        
+        Generer nu optimerede søgeforespørgsler baseret på den efterfølgende samtalehistorik.
+        
+        Brugerens beskeder fremkommer som: USER
+        Assistentens svar fremkommer som: ASSISTANT
+        
+        Fokuser på brugerens beskeder når du genererer søgeforespørgsler, men præciser disse søgeforespørgsler ud fra hele samtalehistorikken.
+        Fremgår der flere USER input i den kronologiske samtalehistorik og omhandler disse vidt forskellige emner så læg fokus på den sidstnævnte.
+
+        <chat_history>
+        {{MESSAGES:END:3}}
+        </chat_history>
+      RETRIEVAL_QUERY_GENERATION_PROMPT_TEMPLATE: |
+        ### Opgave:
+        Analysér samtalehistorikken og generér 1-3 søgeforespørgsler optimeret til semantisk søgning i en vidensbase.
+
+        ### Instruktioner:
+        - Svar **UDELUKKENDE** med et JSON-objekt.
+        - Basér forespørgsler **udelukkende på brugerens spørgsmål og informationsbehov**. Brug assistentens svar kun til kontekst og disambiguation (f.eks. til at forstå hvad "det", "den anden" refererer til).
+        - Generér forespørgsler som naturlige sætninger der fanger den semantiske betydning af brugerens informationsbehov.
+        - Omformuler samtale-referencer ("det", "den anden", "hvad med") til selvstændige, fuldstændige forespørgsler.
+        - Hver forespørgsel skal dække en forskellig vinkel for at maksimere dækningen af relevante dokumenter.
+        - Hvis brugerens besked tydeligt ikke kræver dokumentsøgning (f.eks. hilsner), returner: { "queries": [] }
+        - Svar på samtalens primære sprog; brug dansk som standard.
+        - Dato: {{CURRENT_DATE}}
+
+        ### Output:
+        { "queries": ["query1", "query2"] }
+
+        ### Samtalehistorik:
+        <chat_history>
+        {{MESSAGES:END:4}}
+        </chat_history>
+      RAG_TEMPLATE: |
+        ### Opgave:
+        Besvar brugerens spørgsmål ved hjælp af den medfølgende kontekst, og inkorporer kildehenvisninger i formatet [id] **kun når `<source>`-tagget indeholder en eksplicit id-attribut** (f.eks. `<source id="1">`).
+
+        ### Retningslinjer:
+        - Hvis du ikke kender svaret, skal du tydeligt angive dette.
+        - Hvis du er usikker, skal du bede brugeren om afklaring.
+        - Svar på samme sprog som brugerens spørgsmål.
+        - Hvis konteksten er ulæselig eller af dårlig kvalitet, skal du informere brugeren og give det bedst mulige svar.
+        - Hvis svaret ikke findes i konteksten, men du besidder viden om emnet, skal du forklare dette og besvare spørgsmålet ud fra din egen forståelse.
+        - **Inkluder kun kildehenvisninger i formatet [id] (f.eks. [1], [2]) når `<source>`-tagget indeholder en id-attribut.**
+        - Undlad at citere, hvis `<source>`-tagget ikke indeholder en id-attribut.
+        - Brug ikke XML-tags i dit svar.
+        - Sørg for, at kildehenvisninger er kortfattede og direkte relaterede til den givne information.
+
+        ### Eksempel på kildehenvisning:
+        Hvis brugeren spørger om et bestemt emne, og informationen findes i en kilde med en angivet id-attribut, skal svaret indeholde kildehenvisningen som i følgende eksempel:
+        * "Ifølge undersøgelsen øger den foreslåede metode effektiviteten med 20 % [1]."
+
+        ### Output:
+        Giv et klart og direkte svar på brugerens spørgsmål, og inkluder kildehenvisninger i formatet [id] kun når et `<source>`-tag med id-attribut er til stede i konteksten.
+
+        <context>
+        {{CONTEXT}}
+        </context>
+      # Notes
+      ENABLE_NOTES: ${ENABLE_NOTES:-false}
+      # Vector store
+      VECTOR_DB: "qdrant"
+      QDRANT_URI: "http://qdrant:6333"
+      QDRANT_API_KEY: ${QDRANT_API_KEY:-123456789}
+      ENABLE_QDRANT_MULTITENANCY_MODE: "True"
+      # Web-search
+      ENABLE_WEB_SEARCH: false
+      # Code execution
+      ENABLE_CODE_EXECUTION: ${ENABLE_CODE_EXECUTION:-"True"}
+      ENABLE_CODE_INTERPRETER: ${ENABLE_CODE_INTERPRETER:-"False"}
+      # Disable follow-up generation
+      ENABLE_FOLLOW_UP_GENERATION: false
+    networks:
+      - app
+      - frontend
+    ports:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kreuzberg:
+        condition: service_healthy
+      garage:
+        condition: service_healthy
+      garage-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health/db" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    cap_add:
+      - SYS_ADMIN
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./open-webui:/app
+      - .docker/start.sh:/app/backend/start.sh
+      - .docker/data/storage:/app/backend/data
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=frontend"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`${COMPOSE_DOMAIN}`)"
+      # HTTPS config - uncomment to enable redirect from :80 to :443
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
+      # WAS redirect configuration
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-was.rule=Host(`${COMPOSE_DOMAIN}`) && Path(`/was`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-was.middlewares=${COMPOSE_PROJECT_NAME}-was-redirect"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-was-redirect.redirectregex.regex=^https?://[^/]+/was$$"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-was-redirect.redirectregex.replacement=${WAS_REDIRECT_URL:-https://was.digst.dk/ai-aarhuskommune-dk}"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-was-redirect.redirectregex.permanent=true"
+
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_HOST: localhost
+    networks:
+      - app
+    ports:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - .docker/data/postgres:/var/lib/postgresql/data 
+
+  node:
+    build:
+      dockerfile: Dockerfile
+      context: .docker/node
+      args:
+        USER_ID: ${USER_ID:-1000}
+        GROUP_ID: ${GROUP_ID:-1000}
+    #restart: unless-stopped
+    working_dir: /app
+    #command: npm run build:watch
+    volumes:
+      - ./open-webui:/app
+
+  garage:
+    image: dxflrs/garage:${GARAGE_VERSION:-v2.4.1}
+    restart: unless-stopped
+    environment:
+      # Authenticates the RPC channel on 3901 (node-to-node and CLI-to-node).
+      # Generate using: openssl rand -hex 32
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-fa5cb32e38dbac6e15d316f783eba255bdb3e4ab5bddb7ff59ee7030482c28a4}
+    networks:
+      - app
+    ports:
+      - "3900"
+    healthcheck:
+      test: [ "CMD", "/garage", "status" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - ./.docker/data/garage/data:/var/lib/garage/data
+      - ./.docker/data/garage/meta:/var/lib/garage/meta
+      - ./.docker/garage/garage.toml:/etc/garage.toml:ro
+
+  garage-init:
+    restart: "no"
+    build:
+      context: ./.docker/garage
+      dockerfile: Dockerfile.init
+      args:
+        GARAGE_VERSION: ${GARAGE_VERSION:-v2.4.1}
+    command: [ "/bin/sh", "/init.sh" ]
+    networks:
+      - app
+    depends_on:
+      garage:
+        condition: service_healthy
+    environment:
+      GARAGE_RPC_HOST: garage:3901
+      # Must match the garage service's value above — same default, same override.
+      GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:-fa5cb32e38dbac6e15d316f783eba255bdb3e4ab5bddb7ff59ee7030482c28a4}
+      GARAGE_ACCESS_KEY: ${S3_ROOT_USER:-s3adminkey}
+      GARAGE_SECRET_KEY: ${S3_ROOT_PASSWORD:-s3passwords3password}
+      GARAGE_BUCKET: ${S3_BUCKET_NAME:-openwebui}
+    volumes:
+      - ./.docker/garage/init.sh:/init.sh:ro
+      - ./.docker/garage/garage.toml:/etc/garage.toml:ro
+      - ./.docker/data/garage/meta:/var/lib/garage/meta:ro
+
+  redis:
+    image: redis:7.4.2-alpine3.21
+    networks:
+      - app
+    ports:
+      - "6379"
+
+  qdrant:
+    image: qdrant/qdrant:v1.17-unprivileged
+    networks:
+      - app
+    ports:
+      - '6333'
+      - '6334'
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-123456789}
+    volumes:
+      - ./.docker/data/qdrant:/qdrant/storage:rw
