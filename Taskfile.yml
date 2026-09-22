@@ -1,0 +1,409 @@
+version: '3'
+
+# https://taskfile.dev/usage/#env-files
+dotenv: [ '.env.docker.local', '.env.local', '.env' ]
+
+vars:
+  # https://taskfile.dev/reference/templating/
+  BASE_URL: '{{.TASK_BASE_URL | default .COMPOSE_SERVER_DOMAIN | default .COMPOSE_DOMAIN }}'
+  DOCKER_COMPOSE: '{{ .TASK_DOCKER_COMPOSE | default "itkdev-docker-compose" }}'
+  OPEN_WEBUI_REPO: 'https://github.com/os2ai/open-webui.git'
+
+  # Versions
+  OPEN_WEBUI_PREV_VERSION: 'v0.11.2'
+  OPEN_WEBUI_VERSION: 'v0.11.3'
+  PROD_OPEN_WEBUI_VERSION: 'v0.11.3-3'
+  TARGET_DIR: 'open-webui'
+
+  PATCHES:
+    - name: 'Pinned info banner'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/1.diff'
+      branch: 'patch/pinned-info-banner'
+    - name: 'Add token to TTS requests'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/2.diff'
+      branch: 'patch/tts-token'
+    - name: 'Extra permissions'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/3.diff'
+      branch: 'patch/extra-permissions'
+    - name: 'Fixed null error in auth database session handling'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/4.diff'
+      branch: 'patch/oauth_token_expire'
+    - name: 'Route MCP tool results through the existing citation pipeline (agentic search)'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/5.diff'
+      branch: 'patch/agentic-search'
+    - name: 'Template for rag queries'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/6.diff'
+      branch: 'patch/rag-query-template'
+    - name: 'Add ability to turn off prompt suggestions displaying at all'
+      url: 'https://patch-diff.githubusercontent.com/raw/os2ai/open-webui/pull/7.diff'
+      branch: 'patch/add-enable-prompt-suggestions'
+
+tasks:
+  default:
+    desc: 'List all tasks'
+    cmds:
+      - task --list-all
+    silent: true
+
+  compose:
+    desc: "Run `docker compose` command. Example: task compose -- up --detach"
+    cmds:
+      - cmd: '{{ .DOCKER_COMPOSE }} {{ .CLI_ARGS }}'
+        platforms: [amd64]
+      - cmd: '{{ .DOCKER_COMPOSE }} -f docker-compose.arm.yml {{ .CLI_ARGS }}'
+        platforms: [arm64]
+
+  ####
+  ## Git helpers
+  ####
+  git:sync:tags:
+    desc: "Sync tags from upstream repos"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - |
+        echo "This assumes that you already have synced the main and dev branches with upstream on github!"
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Sync cancelled."
+          exit 1
+        fi
+      - git remote add upstream https://github.com/open-webui/open-webui
+      - git fetch --tags upstream
+      - git push --tags
+      - git remote rm upstream
+    silent: true
+
+  git:clone:
+    desc: "Clone open-webui core"
+    cmds:
+      - git clone {{ .OPEN_WEBUI_REPO }}
+      - cd "{{ .TARGET_DIR }}" && git checkout {{ .OPEN_WEBUI_VERSION }}
+    silent: true
+
+  git:checkout:dev:
+    desc: "Checkout open-webui dev branch"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - git reset --hard
+      - git checkout .
+      - git checkout dev
+    silent: true
+
+  git:reset:
+    desc: "Reset open-webui checkout to a specific version"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - git reset --hard
+      - git checkout .
+      - git clean -fd
+      - git checkout {{ .OPEN_WEBUI_VERSION }}
+    silent: true
+
+  ####
+  ## Install and setup (local helpers)
+  ####
+  patch:base:
+    desc: "Patch open-webui with genral custom patches"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - for: { var: PATCHES }
+        cmd: |
+          curl -H 'Cache-Control: no-cache, no-store' -sSL {{ .ITEM.url }} | git apply --verbose -
+    silent: false
+
+  patches:download:
+    desc: "Download all patch diffs to patches/{{ .OPEN_WEBUI_VERSION }}/, named after the patch name"
+    vars:
+      PATCHES_DIR: 'patches/{{ .OPEN_WEBUI_VERSION }}'
+    cmds:
+      - for: { var: PATCHES }
+        task: patches:download:one
+        vars:
+          PATCH_DIR: '{{ .PATCHES_DIR }}'
+          PATCH_NAME: '{{ .ITEM.name }}'
+          PATCH_URL: '{{ .ITEM.url }}'
+      - echo "Downloaded patches to {{ .PATCHES_DIR }}/"
+    silent: true
+
+  patches:download:one:
+    desc: "Download a single patch diff into PATCH_DIR"
+    internal: true
+    cmds:
+      - |
+        mkdir -p {{ .PATCH_DIR }}
+        # Slugify the patch name into a file name.
+        file="{{ .PATCH_DIR }}/$(printf '%s' '{{ .PATCH_NAME }}' | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed -e 's/^-//' -e 's/-$//').diff"
+        echo "Downloading '{{ .PATCH_NAME }}' -> $file"
+        curl -H 'Cache-Control: no-cache, no-store' -sSL --fail -o "$file" {{ .PATCH_URL }}
+    silent: true
+
+  install:
+    desc: "Install new web-ui"
+    cmds:
+      - |
+        echo "This will reset all changes and install a new version of open-webui:"
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Install cancelled."
+          exit 1
+        fi
+      - if [ ! -d "{{ .TARGET_DIR }}" ]; then task git:clone; fi
+      - task git:reset
+      - task patch:aarhus
+      - task rag:clone
+      - task copy:config
+      - task compose -- pull
+      - task compose -- up --detach --force-recreate
+      - task wui:frontend:build
+    silent: true
+
+  open:
+    desc: "Open-webui in the browser"
+    cmds:
+      - open http://{{ .BASE_URL }}
+    silent: true
+
+  copy:config:
+    desc: "Copy config file from example, if it does not exist"
+    cmds:
+      - if ! [ -f .env ]; then cp .env.default .env; fi
+    silent: true
+
+  wui:npmrc:
+    desc: "Raise the node heap in open-webui/.npmrc for the vite build"
+    internal: true
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      # vite OOMs at node's default ~4 GB heap while rendering chunks. npm exports
+      # `node-options` as NODE_OPTIONS for lifecycle scripts, so this reaches vite
+      # inside the image build as well - no Dockerfile patch needed.
+      - |
+        grep -v '^node-options=' .npmrc > .npmrc.tmp 2>/dev/null || true
+        echo 'node-options=--max-old-space-size={{ .NODE_BUILD_MEMORY | default "8192" }}' >> .npmrc.tmp
+        mv .npmrc.tmp .npmrc
+    silent: true
+
+  wui:backend:build:
+    desc: "Build container with newest requirements"
+    cmds:
+      - task: wui:npmrc
+      - task compose -- build --pull
+    silent: true
+
+  wui:frontend:build:
+    desc: "Build frontend"
+    cmds:
+      - task: wui:npmrc
+      - task compose -- run --rm -it node npm ci --force
+      - task compose -- run --rm -it node npm run build
+    silent: true
+
+  wui:frontend:dev:build:
+    desc: "Build frontend with environment set to dev (enables console logs etc.)"
+    cmds:
+      - task: wui:npmrc
+      - task compose -- run --rm -it -e ENV=dev node npm ci --force
+      - task compose -- run --rm -it -e ENV=dev node npm run build
+    silent: true
+
+  ####
+  ## Database helpers
+  ####
+  db:dump:
+    desc: "Dump the Open WebUI postgres database. Example: task db:dump -- backup.sql (default: dump.sql)"
+    vars:
+      DUMP_FILE: '{{ .CLI_ARGS | default "dump.sql" }}'
+    cmds:
+      - cmd: '{{ .DOCKER_COMPOSE }} exec -T postgres pg_dump -U "${POSTGRES_USER:-postgres}" --clean --if-exists -d postgres > {{ .DUMP_FILE }}'
+        platforms: [amd64]
+      - cmd: '{{ .DOCKER_COMPOSE }} -f docker-compose.arm.yml exec -T postgres pg_dump -U "${POSTGRES_USER:-postgres}" --clean --if-exists -d postgres > {{ .DUMP_FILE }}'
+        platforms: [arm64]
+      - echo "Dumped Open WebUI database to {{ .DUMP_FILE }}"
+    silent: true
+
+  db:import:
+    desc: "Import a SQL dump into the Open WebUI postgres database (EMPTIES the database first, then imports). Example: task db:import -- dump.sql"
+    vars:
+      DUMP_FILE: '{{ .CLI_ARGS | default "dump.sql" }}'
+    cmds:
+      - |
+        echo "This will EMPTY the local Open WebUI postgres database and import '{{ .DUMP_FILE }}'."
+        echo "Tip: stop the openwebui container first for a clean restore (task compose -- stop openwebui)."
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Import cancelled."
+          exit 1
+        fi
+      - cmd: '{{ .DOCKER_COMPOSE }} exec -T postgres psql -U "${POSTGRES_USER:-postgres}" -d postgres -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+        platforms: [amd64]
+      - cmd: '{{ .DOCKER_COMPOSE }} -f docker-compose.arm.yml exec -T postgres psql -U "${POSTGRES_USER:-postgres}" -d postgres -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+        platforms: [arm64]
+      - cmd: '{{ .DOCKER_COMPOSE }} exec -T postgres psql -U "${POSTGRES_USER:-postgres}" -d postgres < {{ .DUMP_FILE }}'
+        platforms: [amd64]
+      - cmd: '{{ .DOCKER_COMPOSE }} -f docker-compose.arm.yml exec -T postgres psql -U "${POSTGRES_USER:-postgres}" -d postgres < {{ .DUMP_FILE }}'
+        platforms: [arm64]
+      - echo "Imported {{ .DUMP_FILE }} into the Open WebUI database"
+    silent: true
+
+  ####
+  ## Storage (S3) helpers
+  ####
+  s3:dump:
+    desc: "Dump the Open WebUI S3 bucket to a local folder. Example: task s3:dump -- backup-dir (default: s3-dump)"
+    vars:
+      DUMP_DIR: '{{ .CLI_ARGS | default "s3-dump" }}'
+      BUCKET: 'openwebui'
+    cmds:
+      - mkdir -p {{ .DUMP_DIR }}
+      - cmd: '{{ .DOCKER_COMPOSE }} run --rm -T --user "$(id -u):$(id -g)" -e RCLONE_CONFIG=/tmp/rclone.conf -e RCLONE_CONFIG_GARAGE_TYPE=s3 -e RCLONE_CONFIG_GARAGE_PROVIDER=Other -e RCLONE_CONFIG_GARAGE_ENDPOINT=http://garage:3900 -e RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID=${INGESTION_S3_ROOT_USER:-s3adminkey} -e RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY=${S3_ROOT_PASSWORD:-s3passwords3password} -v "${PWD}/{{ .DUMP_DIR }}:/dump" --entrypoint rclone garage-init sync -P garage:{{ .BUCKET }} /dump'
+        platforms: [amd64]
+      - cmd: '{{ .DOCKER_COMPOSE }} -f docker-compose.arm.yml run --rm -T --user "$(id -u):$(id -g)" -e RCLONE_CONFIG=/tmp/rclone.conf -e RCLONE_CONFIG_GARAGE_TYPE=s3 -e RCLONE_CONFIG_GARAGE_PROVIDER=Other -e RCLONE_CONFIG_GARAGE_ENDPOINT=http://garage:3900 -e RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID=${INGESTION_S3_ROOT_USER:-s3adminkey} -e RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY=${S3_ROOT_PASSWORD:-s3passwords3password} -v "${PWD}/{{ .DUMP_DIR }}:/dump" --entrypoint rclone garage-init sync -P garage:{{ .BUCKET }} /dump'
+        platforms: [arm64]
+      - echo "Dumped S3 bucket '{{ .BUCKET }}' to {{ .DUMP_DIR }}/ (use scp/rsync to move it)"
+    silent: true
+
+  s3:import:
+    desc: "Restore an S3 dump folder into the Open WebUI bucket (OVERWRITES current objects). Example: task s3:import -- backup-dir (default: s3-dump)"
+    vars:
+      DUMP_DIR: '{{ .CLI_ARGS | default "s3-dump" }}'
+      BUCKET: 'openwebui'
+    cmds:
+      - |
+        echo "This will OVERWRITE the local Open WebUI S3 bucket '{{ .BUCKET }}' with the contents of '{{ .DUMP_DIR }}/'."
+        echo "Objects in the bucket that are not in the dump will be DELETED."
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Import cancelled."
+          exit 1
+        fi
+      - cmd: '{{ .DOCKER_COMPOSE }} run --rm -T --user "$(id -u):$(id -g)" -e RCLONE_CONFIG=/tmp/rclone.conf -e RCLONE_CONFIG_GARAGE_TYPE=s3 -e RCLONE_CONFIG_GARAGE_PROVIDER=Other -e RCLONE_CONFIG_GARAGE_ENDPOINT=http://garage:3900 -e RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID=${INGESTION_S3_ROOT_USER:-s3adminkey} -e RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY=${S3_ROOT_PASSWORD:-s3passwords3password} -v "${PWD}/{{ .DUMP_DIR }}:/dump" --entrypoint rclone garage-init sync -P /dump garage:{{ .BUCKET }}'
+        platforms: [amd64]
+      - cmd: '{{ .DOCKER_COMPOSE }} -f docker-compose.arm.yml run --rm -T --user "$(id -u):$(id -g)" -e RCLONE_CONFIG=/tmp/rclone.conf -e RCLONE_CONFIG_GARAGE_TYPE=s3 -e RCLONE_CONFIG_GARAGE_PROVIDER=Other -e RCLONE_CONFIG_GARAGE_ENDPOINT=http://garage:3900 -e RCLONE_CONFIG_GARAGE_ACCESS_KEY_ID=${INGESTION_S3_ROOT_USER:-s3adminkey} -e RCLONE_CONFIG_GARAGE_SECRET_ACCESS_KEY=${S3_ROOT_PASSWORD:-s3passwords3password} -v "${PWD}/{{ .DUMP_DIR }}:/dump" --entrypoint rclone garage-init sync -P /dump garage:{{ .BUCKET }}'
+        platforms: [arm64]
+      - echo "Imported {{ .DUMP_DIR }}/ into the S3 bucket '{{ .BUCKET }}'"
+    silent: true
+
+  ####
+  ## Update webui version helpers (<-- danger zone -->)
+  ####
+  patches:rebase:
+    desc: "Rebase patch to laste release"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - |
+        echo "This will rebase all patches to open-webui {{ .OPEN_WEBUI_VERSION }} from {{ .OPEN_WEBUI_PREV_VERSION }}:"
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Install cancelled."
+          exit 1
+        fi
+      - for: { var: PATCHES }
+        cmd: |
+          if [ -n "{{ .ITEM.branch }}" ]; then
+            echo "Processing patch: {{ .ITEM.name }}"
+            git checkout {{ .ITEM.branch }}
+            git pull
+            git rebase --onto upstream/{{ .OPEN_WEBUI_VERSION }} upstream/{{ .OPEN_WEBUI_PREV_VERSION }}
+          else
+            echo "No branch specified for this '{{ .ITEM.name }}', skipping rebase"
+          fi
+      - git checkout upstream/{{ .OPEN_WEBUI_VERSION }}
+    silent: true
+
+  patches:reset:
+    desc: "Rest patch branched to GitHub version"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - |
+        echo "This will reset all patches to open-webui to current version on Github:"
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Install cancelled."
+          exit 1
+        fi
+      - for: { var: PATCHES }
+        cmd: |
+          if [ -n "{{ .ITEM.branch }}" ]; then
+            echo "Resetting patch: {{ .ITEM.name }}"
+            git checkout {{ .ITEM.branch }}
+            git reset --hard origin/{{ .ITEM.branch }}
+            git pull
+          else
+            echo "No branch specified for this '{{ .ITEM.name }}', skipping rebase"
+          fi
+      - git checkout upstream/{{ .OPEN_WEBUI_VERSION }}
+    silent: true
+
+  patches:force:
+    desc: "Force push all patches branches"
+    dir: "{{ .TARGET_DIR }}"
+    cmds:
+      - |
+        echo "This will force push all patches branches:"
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Push cancelled."
+          exit 1
+        fi
+      - for: { var: PATCHES }
+        cmd: |
+          if [ -n "{{ .ITEM.branch }}" ]; then
+            git push origin {{ .ITEM.branch }} --force
+          else
+            echo "No branch specified for this '{{ .ITEM.name }}', skipping push"
+          fi
+    silent: true
+
+  ####
+  ## Production build (shared implementation)
+  ####
+  prod:prepare:
+    desc: "Prepare production build - reset git and apply patches"
+    vars:
+      PATCH_TASK: '{{ .PATCH_TASK | default "patch:base" }}'
+    cmds:
+      - task: git:reset
+      - task: '{{ .PATCH_TASK }}'
+      - task: wui:npmrc
+
+  prod:build:
+    desc: "Build and push docker image with custom registry and image name"
+    internal: true
+    vars:
+      IMAGE_NAME: '{{ .IMAGE_NAME }}'
+      PATCH_TASK: '{{ .PATCH_TASK | default "patch:base" }}'
+    cmds:
+      - |
+        echo "You are about to build and push production images:"
+        echo "  - {{ .IMAGE_NAME }}:{{.PROD_OPEN_WEBUI_VERSION}}"
+        echo "  - {{ .IMAGE_NAME }}:latest"
+        echo ""
+        read -p "Are you sure you want to continue? (y/N): " confirm
+        if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+          echo "Build cancelled."
+          exit 1
+        fi
+      - task: prod:prepare
+        vars:
+          PATCH_TASK: '{{ .PATCH_TASK }}'
+      - COMPOSE_BAKE=true docker compose --file docker-compose.yml build --no-cache --pull openwebui
+      - docker tag openwebui-openwebui {{ .IMAGE_NAME }}:{{.PROD_OPEN_WEBUI_VERSION}}
+      - docker tag openwebui-openwebui {{ .IMAGE_NAME }}:latest
+      - docker push {{ .IMAGE_NAME }}:{{.PROD_OPEN_WEBUI_VERSION}}
+      - docker push {{ .IMAGE_NAME }}:latest
+    silent: true
+
+  prod:build:os2ai:
+    desc: Build docker image and push to OS2ai
+    cmds:
+      - task: prod:build
+        vars:
+          IMAGE_NAME: ghcr.io/os2ai/open-webui
+          PATCH_TASK: patch:base

@@ -1,4 +1,4 @@
-# AarhusAI developer setup
+# OS2ai developer setup
 
 Docker setup with [Taskfile](https://taskfile.dev/) for local development of OS2ai. This repo only orchestrates: 
 cloning, patching, composing, backups and image builds. The source code for the individual parts lives in repositories
