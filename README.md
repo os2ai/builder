@@ -48,11 +48,7 @@ graph TD
     OW --> QD[(qdrant)]
     OW -->|S3| S3[garage]
     OW -->|OpenAI API| LLM[litellm gateway - GPU servers, external]
-    OW -->|web search| SX[searxng]
     OW -->|MCP tools| SA[search-agent]
-    RET --> QD
-    ING --> QD
-    ING -->|S3| S3
 ```
 
 ## Prerequisites
