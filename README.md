@@ -189,10 +189,9 @@ have to be done, one patch at a time, by hand.
 ### Contribution rules
 
 - **Upstream-first.** Every change is a PR on the fork (`os2ai/open-webui`); the applied
-  artifact is that PR's `.diff`. Add a new patch by adding its PR to `PATCHES`, `PATCHES_AARHUS` or `PATCHES_OS2` with
-  its branch name.
-- **Ticket-prefixed / referenced commits.** Patch changes carry a reference to their PR and ticket, e.g.
-  `# PATCH (os2ai/open-webui#41, ticket 5511): …`.
+  artifact is that PR's `.diff`. Add a new patch by adding its PR to `PATCHES` with its branch name.
+- **Issue-prefixed / referenced commits.** Patch changes carry a reference to their PR and ticket, e.g.
+  `# PATCH (os2ai/open-webui#41, issue 5511): …`.
 - **Comment-wrapped patches.** Wrap each change in identifying comments so it survives rebases and stays greppable, e.g.
   `<!-- PATCH ADD BANNERS TO CHAT INPUT -->` … `<!-- /PATCH ADD BANNERS TO CHAT INPUT -->` in Svelte, or `# PATCH (...)`
   blocks in Python.
@@ -218,9 +217,9 @@ Production images build the `openwebui` service from `docker-compose.yml`
 (`COMPOSE_BAKE=true docker compose --file docker-compose.yml build --no-cache --pull openwebui`), then tag and push at
 `PROD_OPEN_WEBUI_VERSION` and `latest`. Each build first runs `prod:prepare` (git reset → apply patch set → bump npmrc):
 
-| Task                  | Image                      | Patch set                      |
-|-----------------------|----------------------------|--------------------------------|
-| `prod:build:os2ai`    | `ghcr.io/os2ai/open-webui` | `patch:os2ai` (base + OS2)     |
+| Task            | Image                      | Patch set      |
+|-----------------|----------------------------|----------------|
+| `prod:build`    | `ghcr.io/os2ai/open-webui` | `patches`      |
 
 Build for `linux/arm64` by adding `-f docker-compose.arm.yml` (auto-applied by `task compose` on arm64 hosts), which
 sets `openwebui.build.platforms`.

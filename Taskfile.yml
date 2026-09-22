@@ -8,6 +8,7 @@ vars:
   BASE_URL: '{{.TASK_BASE_URL | default .COMPOSE_SERVER_DOMAIN | default .COMPOSE_DOMAIN }}'
   DOCKER_COMPOSE: '{{ .TASK_DOCKER_COMPOSE | default "itkdev-docker-compose" }}'
   OPEN_WEBUI_REPO: 'https://github.com/os2ai/open-webui.git'
+  IMAGE_NAME: 'ghcr.io/os2ai/open-webui'
 
   # Versions
   OPEN_WEBUI_PREV_VERSION: 'v0.11.2'
@@ -100,11 +101,8 @@ tasks:
       - git checkout {{ .OPEN_WEBUI_VERSION }}
     silent: true
 
-  ####
-  ## Install and setup (local helpers)
-  ####
-  patch:base:
-    desc: "Patch open-webui with genral custom patches"
+  patches:apply:
+    desc: "Patch open-webui with custom patches"
     dir: "{{ .TARGET_DIR }}"
     cmds:
       - for: { var: PATCHES }
@@ -362,23 +360,10 @@ tasks:
     silent: true
 
   ####
-  ## Production build (shared implementation)
+  ## Production build
   ####
-  prod:prepare:
-    desc: "Prepare production build - reset git and apply patches"
-    vars:
-      PATCH_TASK: '{{ .PATCH_TASK | default "patch:base" }}'
-    cmds:
-      - task: git:reset
-      - task: '{{ .PATCH_TASK }}'
-      - task: wui:npmrc
-
   prod:build:
     desc: "Build and push docker image with custom registry and image name"
-    internal: true
-    vars:
-      IMAGE_NAME: '{{ .IMAGE_NAME }}'
-      PATCH_TASK: '{{ .PATCH_TASK | default "patch:base" }}'
     cmds:
       - |
         echo "You are about to build and push production images:"
@@ -390,20 +375,13 @@ tasks:
           echo "Build cancelled."
           exit 1
         fi
-      - task: prod:prepare
-        vars:
-          PATCH_TASK: '{{ .PATCH_TASK }}'
+      - task: git:reset
+      - task: '{{ .PATCH_TASK }}'
+      - task: wui:npmrc
+      - task: patches:apply
       - COMPOSE_BAKE=true docker compose --file docker-compose.yml build --no-cache --pull openwebui
       - docker tag openwebui-openwebui {{ .IMAGE_NAME }}:{{.PROD_OPEN_WEBUI_VERSION}}
       - docker tag openwebui-openwebui {{ .IMAGE_NAME }}:latest
       - docker push {{ .IMAGE_NAME }}:{{.PROD_OPEN_WEBUI_VERSION}}
       - docker push {{ .IMAGE_NAME }}:latest
     silent: true
-
-  prod:build:os2ai:
-    desc: Build docker image and push to OS2ai
-    cmds:
-      - task: prod:build
-        vars:
-          IMAGE_NAME: ghcr.io/os2ai/open-webui
-          PATCH_TASK: patch:base
