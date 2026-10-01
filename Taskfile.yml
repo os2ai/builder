@@ -11,9 +11,9 @@ vars:
   IMAGE_NAME: 'ghcr.io/os2ai/open-webui'
 
   # Versions
-  OPEN_WEBUI_PREV_VERSION: 'v0.11.2'
-  OPEN_WEBUI_VERSION: 'v0.11.3'
-  PROD_OPEN_WEBUI_VERSION: 'v0.11.3-3'
+  OPEN_WEBUI_PREV_VERSION: 'v0.11.3'
+  OPEN_WEBUI_VERSION: 'v0.11.4'
+  PROD_OPEN_WEBUI_VERSION: 'v0.11.4-1'
   TARGET_DIR: 'open-webui'
 
   PATCHES:
@@ -310,7 +310,7 @@ tasks:
           else
             echo "No branch specified for this '{{ .ITEM.name }}', skipping rebase"
           fi
-      - git checkout upstream/{{ .OPEN_WEBUI_VERSION }}
+      - git checkout {{ .OPEN_WEBUI_VERSION }}
     silent: true
 
   patches:reset:
@@ -335,7 +335,7 @@ tasks:
           else
             echo "No branch specified for this '{{ .ITEM.name }}', skipping rebase"
           fi
-      - git checkout upstream/{{ .OPEN_WEBUI_VERSION }}
+      - git checkout {{ .OPEN_WEBUI_VERSION }}
     silent: true
 
   patches:force:
@@ -353,7 +353,7 @@ tasks:
       - for: { var: PATCHES }
         cmd: |
           if [ -n "{{ .ITEM.branch }}" ]; then
-            git push origin {{ .ITEM.branch }} --force
+            git push origin {{ .ITEM.branch }} --force-with-lease
           else
             echo "No branch specified for this '{{ .ITEM.name }}', skipping push"
           fi
