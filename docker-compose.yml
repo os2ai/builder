@@ -271,8 +271,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      kreuzberg:
-        condition: service_healthy
       garage:
         condition: service_healthy
       garage-init:
