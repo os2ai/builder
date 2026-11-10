@@ -8,25 +8,26 @@ at [https://github.com/os2ai/](https://github.com/os2ai/)-
 
 ### Services
 
-Two compose stacks exist. `docker-compose.yml` is the **local dev** stack (builds `open-webui/` from source, Garage for
-S3). `docker-compose.server.yml` is the **production/server** stack (pulls the prebuilt `itkdev/openwebui` image, Garage
-for S3, SearXNG). Overlays add ARM support and agents. The LiteLLM model gateway is **not** part of these compose
-files — it runs on GPU servers and Open WebUI reaches it over the network
+`docker-compose.yml` is the **local dev** stack (builds `open-webui/` from source, Garage for
+S3). Overlays add ARM support and agents; the production/server deployment lives in the
+[helm-deployments](https://github.com/os2ai/helm-deployments) repo, not in a compose file. The LiteLLM model gateway
+is **not** part of these compose files — it runs on GPU servers and Open WebUI reaches it over the network
 (see [Connecting Open WebUI to LiteLLM](#connecting-open-webui-to-litellm)).
 
 | Service                 | Stack  | Role                                                                                      |
 |-------------------------|--------|-------------------------------------------------------------------------------------------|
-| `openwebui`             | both   | Open WebUI backend + frontend; routed via Traefik on `COMPOSE_DOMAIN`, internal port 8080 |
-| `postgres`              | both   | Open WebUI application database (Postgres 17)                                             |
-| `redis`                 | both   | Websocket manager + cache                                                                 |
-| `qdrant`                | both   | Vector store for RAG (ports 6333/6334)                                                    |
-| `garage`                | both   | S3-compatible object storage (Garage, API 3900 / RPC 3901)                                |
-| `garage-init`           | both   | One-shot: creates the S3 bucket and access keys in Garage                                 |
-| `node`                  | dev    | One-shot Node container for the Vite frontend build                                       |
+| `openwebui`             | base   | Open WebUI backend + frontend; routed via Traefik on `COMPOSE_DOMAIN`, internal port 8080 |
+| `postgres`              | base   | Open WebUI application database (Postgres 17)                                             |
+| `redis`                 | base   | Websocket manager + cache                                                                 |
+| `qdrant`                | base   | Vector store for RAG (ports 6333/6334)                                                    |
+| `garage`                | base   | S3-compatible object storage (Garage, API 3900 / RPC 3901)                                |
+| `garage-init`           | base   | One-shot: creates the S3 bucket and access keys in Garage                                 |
+| `node`                  | base   | One-shot Node container for the Vite frontend build                                       |
 | `search-agent`          | agents | Web-search MCP tool server (port 8001)                                                    |
 
-All containers join the internal `app` network; `openwebui` also joins the external `frontend` network (Traefik,
-provided by [`itkdev-docker-compose`](https://github.com/itk-dev/devops_itkdev-docker)). Services publish container 
+All containers join the internal `app` network; `openwebui` also joins the external `frontend` network, which must
+provide Traefik (or any TLS terminator) routing `COMPOSE_DOMAIN` to this stack. Create it once with
+`docker network create frontend` for a self-hosted setup. Services publish container 
 ports only — there are no fixed host port mappings; reach the UI through Traefik at `http://${COMPOSE_DOMAIN}`.
 
 ### Compose layering
@@ -53,13 +54,11 @@ graph TD
 
 ## Prerequisites
 
-- **Docker** with the Compose plugin (`docker compose`).
+- **Docker** with the Compose plugin (`docker compose`) — all compose tasks use it directly.
 - **Task** ([taskfile](https://taskfile.dev)) — the task runner.
 - **Git**.
-- **ITKDev docker compose** ([itkdev-docker-compose](https://github.com/itk-dev/devops_itkdev-docker)) — the default 
-  compose wrapper (`DOCKER_COMPOSE` var). It provides Traefik and the external
-  `frontend` network. To use plain Compose instead, set `TASK_DOCKER_COMPOSE="docker compose"` (you must then supply the
-  `frontend` network and routing yourself).
+- An external `frontend` Docker network with a TLS terminator (e.g. Traefik) routing `COMPOSE_DOMAIN` into the stack:
+  `docker network create frontend`.
 - **curl** — patch tasks pipe PR `.diff` URLs into `git apply`.
 - Access to the `os2ai/*` GitHub repos (fork + agents).
 
