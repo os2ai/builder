@@ -1,0 +1,155 @@
+diff --git a/backend/open_webui/config.py b/backend/open_webui/config.py
+index ad77ed953799..dba480d0a40a 100644
+--- a/backend/open_webui/config.py
++++ b/backend/open_webui/config.py
+@@ -1698,6 +1698,8 @@ def reachable(host: str, port: int) -> bool:
+ 
+ DEFAULT_PINNED_MODELS = os.getenv('DEFAULT_PINNED_MODELS', None)
+ 
++ENABLE_PROMPT_SUGGESTIONS = os.getenv('ENABLE_PROMPT_SUGGESTIONS', 'True').lower() == 'true'
++
+ # None uses the frontend's localized defaults; an empty list disables suggestions.
+ try:
+     DEFAULT_PROMPT_SUGGESTIONS = JSONCodec.loads(os.getenv('DEFAULT_PROMPT_SUGGESTIONS', 'null'))
+@@ -3254,6 +3256,7 @@ def feishu_oauth_register(oauth: OAuth):
+     'ui.prompt_suggestions': DEFAULT_PROMPT_SUGGESTIONS,
+     'ui.prompt_suggestions_i18n': DEFAULT_PROMPT_SUGGESTIONS_I18N,
+     'ui.model_order_list': MODEL_ORDER_LIST,
++    'ui.enable_prompt_suggestions': ENABLE_PROMPT_SUGGESTIONS,
+     'models.default_metadata': DEFAULT_MODEL_METADATA,
+     'models.default_params': DEFAULT_MODEL_PARAMS,
+     'ui.default_user_role': DEFAULT_USER_ROLE,
+diff --git a/backend/open_webui/main.py b/backend/open_webui/main.py
+index 29f5855f3d99..91de7a7382fc 100644
+--- a/backend/open_webui/main.py
++++ b/backend/open_webui/main.py
+@@ -2454,6 +2454,7 @@ async def get_app_config(request: Request):
+         'ui.pending_user_overlay_title',
+         'ui.pending_user_overlay_content',
+         'ui.watermark',
++        'ui.enable_prompt_suggestions',
+     )
+ 
+     return {
+@@ -2547,6 +2548,7 @@ async def get_app_config(request: Request):
+                     'enable_onedrive_integration': config.get('onedrive.enable'),
+                     'enable_memories': config.get('memories.enable'),
+                     'enable_subagents': config.get('subagents.enable'),
++                    'enable_prompt_suggestions': config.get('ui.enable_prompt_suggestions'),
+                     **(
+                         {
+                             'enable_onedrive_personal': ENABLE_ONEDRIVE_PERSONAL,
+diff --git a/src/lib/components/admin/Settings/Models/ModelDefaultsPanel.svelte b/src/lib/components/admin/Settings/Models/ModelDefaultsPanel.svelte
+index f02fd30b3f85..fba2836662a3 100644
+--- a/src/lib/components/admin/Settings/Models/ModelDefaultsPanel.svelte
++++ b/src/lib/components/admin/Settings/Models/ModelDefaultsPanel.svelte
+@@ -259,6 +259,7 @@
+ 					{/if}
+ 				</div>
+ 
++				{#if $appConfig?.features?.enable_prompt_suggestions}
+ 				<div>
+ 					<button
+ 						class="flex w-full items-center justify-between gap-2 rounded-md px-1 py-1.5 text-left font-normal focus-visible:outline focus-visible:outline-2"
+@@ -320,6 +321,7 @@
+ 						</div>
+ 					{/if}
+ 				</div>
++				{/if}
+ 			</div>
+ 		{/if}
+ 	{/if}
+diff --git a/src/lib/components/chat/ChatPlaceholder.svelte b/src/lib/components/chat/ChatPlaceholder.svelte
+index a26e74d720a6..f5d12cca9aa5 100644
+--- a/src/lib/components/chat/ChatPlaceholder.svelte
++++ b/src/lib/components/chat/ChatPlaceholder.svelte
+@@ -44,15 +44,16 @@
+ 	$: selectedModelDescription =
+ 		$config?.license_metadata?.chat_placeholder_description ||
+ 		resolveLocalizedModelDescription(selectedModel, $i18n.language);
+-	$: selectedSuggestionPrompts =
+-		resolveLocalizedModelPromptSuggestions(atSelectedModel, $i18n.language) ??
+-		resolveLocalizedModelPromptSuggestions(models[selectedModelIdx], $i18n.language) ??
+-		resolveLocalizedPromptSuggestions(
+-			$config?.default_prompt_suggestions,
+-			$config?.default_prompt_suggestions_i18n ?? {},
+-			$i18n.language,
+-			(key) => $i18n.t(key)
+-		);
++	$: selectedSuggestionPrompts = $config?.features?.enable_prompt_suggestions
++		? (resolveLocalizedModelPromptSuggestions(atSelectedModel, $i18n.language) ??
++			resolveLocalizedModelPromptSuggestions(models[selectedModelIdx], $i18n.language) ??
++			resolveLocalizedPromptSuggestions(
++				$config?.default_prompt_suggestions,
++				$config?.default_prompt_suggestions_i18n ?? {},
++				$i18n.language,
++				(key) => $i18n.t(key)
++			))
++		: [];
+ 
+ 	onMount(() => {
+ 		mounted = true;
+diff --git a/src/lib/components/chat/Placeholder.svelte b/src/lib/components/chat/Placeholder.svelte
+index ad4f11cfb82d..792c1a757068 100644
+--- a/src/lib/components/chat/Placeholder.svelte
++++ b/src/lib/components/chat/Placeholder.svelte
+@@ -106,15 +106,16 @@
+ 	$: selectedModelDescription =
+ 		$config?.license_metadata?.chat_placeholder_description ||
+ 		resolveLocalizedModelDescription(selectedModel, $i18n.language);
+-	$: selectedSuggestionPrompts =
+-		resolveLocalizedModelPromptSuggestions(atSelectedModel, $i18n.language) ??
+-		resolveLocalizedModelPromptSuggestions(models[selectedModelIdx], $i18n.language) ??
+-		resolveLocalizedPromptSuggestions(
+-			$config?.default_prompt_suggestions,
+-			$config?.default_prompt_suggestions_i18n ?? {},
+-			$i18n.language,
+-			(key) => $i18n.t(key)
+-		);
++	$: selectedSuggestionPrompts = $config?.features?.enable_prompt_suggestions
++		? (resolveLocalizedModelPromptSuggestions(atSelectedModel, $i18n.language) ??
++			resolveLocalizedModelPromptSuggestions(models[selectedModelIdx], $i18n.language) ??
++			resolveLocalizedPromptSuggestions(
++				$config?.default_prompt_suggestions,
++				$config?.default_prompt_suggestions_i18n ?? {},
++				$i18n.language,
++				(key) => $i18n.t(key)
++			))
++		: [];
+ 
+ 	// True when viewing a shared folder the current user doesn't own AND lacks write access
+ 	$: folderReadOnly =
+diff --git a/src/lib/components/workspace/Models/ModelEditor.svelte b/src/lib/components/workspace/Models/ModelEditor.svelte
+index c38714465970..2d8a32f7bd40 100644
+--- a/src/lib/components/workspace/Models/ModelEditor.svelte
++++ b/src/lib/components/workspace/Models/ModelEditor.svelte
+@@ -1641,6 +1641,8 @@
+ 								</section>
+ 
+ 								<fieldset disabled={readOnly} class="min-w-0">
++									<!-- PATCH HIDE PROMPT SUGGESTIONS WHEN DISABLED -->
++									{#if $config?.features?.enable_prompt_suggestions ?? true}
+ 									<section class="mt-0.5">
+ 										<ModelSettingsSection
+ 											label={$i18n.t('Prompts')}
+@@ -1703,6 +1705,8 @@
+ 											{/if}
+ 										</ModelSettingsSection>
+ 									</section>
++									{/if}
++									<!-- /PATCH HIDE PROMPT SUGGESTIONS WHEN DISABLED -->
+ 
+ 									<hr class="my-3 border-gray-100/60 dark:border-gray-850/60" />
+ 
+diff --git a/src/lib/stores/index.ts b/src/lib/stores/index.ts
+index 55f9519c6fe2..e429a6f958e1 100644
+--- a/src/lib/stores/index.ts
++++ b/src/lib/stores/index.ts
+@@ -463,6 +463,7 @@ type Config = {
+ 		enable_pyodide_file_persistence?: boolean;
+ 		folder_max_file_count?: number;
+ 		websocket_heartbeat_interval?: number | null;
++		enable_prompt_suggestions: boolean;
+ 	};
+ 	oauth: {
+ 		providers: {

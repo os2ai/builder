@@ -159,17 +159,16 @@ rather than committed into the tree. Each patch is a GitHub PR `.diff` on a fork
 
 ### Patch sets
 
-- **`PATCHES` (base)** — general fixes/features, from [os2ai/open-webui](https://github.com/os2ai/open-webui/pulls)`
-- **`PATCHES_OS2`** — OS2ai only patches
+- **`PATCHES`** — the os2ai patch set, from [os2ai/open-webui](https://github.com/os2ai/open-webui/pulls)
 
 ### Applying patches
 
 ```bash
 task git:reset        # clean checkout at OPEN_WEBUI_VERSION
-task patch:os2ai     # patch:os2ai or patch:base
+task patches:apply    # fetch each patch PR .diff and git-apply it
 ```
 
-Downloaded snapshots for offline reference / review live under `patches/<version>/{base,aarhus,os2}/` (populate with
+Downloaded snapshots for offline reference / review live under `patches/<version>/` (populate with
 `task patches:download`). We download these patches to ensure re-patching older version is possible.
 
 ### Rebasing onto a new upstream release
@@ -180,10 +179,21 @@ Downloaded snapshots for offline reference / review live under `patches/<version
 4. `task patches:rebase` — for each branch: `git rebase --onto upstream/<new> upstream/<prev>`. Resolve conflicts per
    branch.
 5. `task patches:force` to publish the rebased branches (force-push).
-6. `task patches:download` to refresh the offline snapshots.
-7. Reinstall / rebuild and verify.
+6. Publish the new base branch and retarget every patch PR to it — the PRs base on `upstream/v<version>` branches, not
+   tags:
+   ```bash
+   cd open-webui
+   git push origin refs/tags/<new>:refs/heads/upstream/<new>       # e.g. refs/tags/v0.13.3
+   gh api -X PATCH repos/os2ai/open-webui/pulls/<N> -f base=upstream/<new>   # once per PR
+   ```
+   Until this is done, each PR's `.diff` is still computed against the OLD base and contains all of upstream's
+   intermediate changes (often >100k lines, which GitHub may also 403). This breaks both `patches:download` and
+   `patches:apply`, since the applied artifact is the PR's `.diff`.
+7. `task patches:download` to refresh the offline snapshots. Sanity-check they shrank back to patch-only hunks
+   (`git diff --stat patches/` — a bump should not add upstream files).
+8. Reinstall / rebuild and verify.
 
-Very often this is not possible to automate, has the upstream core changes too much between release, so step 4 to 6 
+Very often this is not possible to automate, has the upstream core changes too much between release, so step 4 to 7 
 have to be done, one patch at a time, by hand.
 
 ### Contribution rules

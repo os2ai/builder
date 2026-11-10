@@ -11,9 +11,9 @@ vars:
   IMAGE_NAME: 'ghcr.io/os2ai/open-webui'
 
   # Versions
-  OPEN_WEBUI_PREV_VERSION: 'v0.11.3'
-  OPEN_WEBUI_VERSION: 'v0.11.4'
-  PROD_OPEN_WEBUI_VERSION: 'v0.11.4-1'
+  OPEN_WEBUI_PREV_VERSION: 'v0.11.4'
+  OPEN_WEBUI_VERSION: 'v0.13.3'
+  PROD_OPEN_WEBUI_VERSION: 'v0.13.3-1'
   TARGET_DIR: 'open-webui'
 
   PATCHES:
@@ -149,8 +149,7 @@ tasks:
         fi
       - if [ ! -d "{{ .TARGET_DIR }}" ]; then task git:clone; fi
       - task git:reset
-      - task patch:aarhus
-      - task rag:clone
+      - task patches:apply
       - task copy:config
       - task compose -- pull
       - task compose -- up --detach --force-recreate
@@ -376,7 +375,6 @@ tasks:
           exit 1
         fi
       - task: git:reset
-      - task: '{{ .PATCH_TASK }}'
       - task: wui:npmrc
       - task: patches:apply
       - COMPOSE_BAKE=true docker compose --file docker-compose.yml build --no-cache --pull openwebui
