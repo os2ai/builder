@@ -8,25 +8,26 @@ at [https://github.com/os2ai/](https://github.com/os2ai/)-
 
 ### Services
 
-Two compose stacks exist. `docker-compose.yml` is the **local dev** stack (builds `open-webui/` from source, Garage for
-S3). `docker-compose.server.yml` is the **production/server** stack (pulls the prebuilt `itkdev/openwebui` image, Garage
-for S3, SearXNG). Overlays add ARM support and agents. The LiteLLM model gateway is **not** part of these compose
-files — it runs on GPU servers and Open WebUI reaches it over the network
+`docker-compose.yml` is the **local dev** stack (builds `open-webui/` from source, Garage for
+S3). Overlays add ARM support and agents; the production/server deployment lives in the
+[helm-deployments](https://github.com/os2ai/helm-deployments) repo, not in a compose file. The LiteLLM model gateway
+is **not** part of these compose files — it runs on GPU servers and Open WebUI reaches it over the network
 (see [Connecting Open WebUI to LiteLLM](#connecting-open-webui-to-litellm)).
 
 | Service                 | Stack  | Role                                                                                      |
 |-------------------------|--------|-------------------------------------------------------------------------------------------|
-| `openwebui`             | both   | Open WebUI backend + frontend; routed via Traefik on `COMPOSE_DOMAIN`, internal port 8080 |
-| `postgres`              | both   | Open WebUI application database (Postgres 17)                                             |
-| `redis`                 | both   | Websocket manager + cache                                                                 |
-| `qdrant`                | both   | Vector store for RAG (ports 6333/6334)                                                    |
-| `garage`                | both   | S3-compatible object storage (Garage, API 3900 / RPC 3901)                                |
-| `garage-init`           | both   | One-shot: creates the S3 bucket and access keys in Garage                                 |
-| `node`                  | dev    | One-shot Node container for the Vite frontend build                                       |
+| `openwebui`             | base   | Open WebUI backend + frontend; routed via Traefik on `COMPOSE_DOMAIN`, internal port 8080 |
+| `postgres`              | base   | Open WebUI application database (Postgres 17)                                             |
+| `redis`                 | base   | Websocket manager + cache                                                                 |
+| `qdrant`                | base   | Vector store for RAG (ports 6333/6334)                                                    |
+| `garage`                | base   | S3-compatible object storage (Garage, API 3900 / RPC 3901)                                |
+| `garage-init`           | base   | One-shot: creates the S3 bucket and access keys in Garage                                 |
+| `node`                  | base   | One-shot Node container for the Vite frontend build                                       |
 | `search-agent`          | agents | Web-search MCP tool server (port 8001)                                                    |
 
-All containers join the internal `app` network; `openwebui` also joins the external `frontend` network (Traefik,
-provided by [`itkdev-docker-compose`](https://github.com/itk-dev/devops_itkdev-docker)). Services publish container 
+All containers join the internal `app` network; `openwebui` also joins the external `frontend` network, which must
+provide Traefik (or any TLS terminator) routing `COMPOSE_DOMAIN` to this stack. Create it once with
+`docker network create frontend` for a self-hosted setup. Services publish container 
 ports only — there are no fixed host port mappings; reach the UI through Traefik at `http://${COMPOSE_DOMAIN}`.
 
 ### Compose layering
@@ -53,13 +54,11 @@ graph TD
 
 ## Prerequisites
 
-- **Docker** with the Compose plugin (`docker compose`).
+- **Docker** with the Compose plugin (`docker compose`) — all compose tasks use it directly.
 - **Task** ([taskfile](https://taskfile.dev)) — the task runner.
 - **Git**.
-- **ITKDev docker compose** ([itkdev-docker-compose](https://github.com/itk-dev/devops_itkdev-docker)) — the default 
-  compose wrapper (`DOCKER_COMPOSE` var). It provides Traefik and the external
-  `frontend` network. To use plain Compose instead, set `TASK_DOCKER_COMPOSE="docker compose"` (you must then supply the
-  `frontend` network and routing yourself).
+- An external `frontend` Docker network with a TLS terminator (e.g. Traefik) routing `COMPOSE_DOMAIN` into the stack:
+  `docker network create frontend`.
 - **curl** — patch tasks pipe PR `.diff` URLs into `git apply`.
 - Access to the `os2ai/*` GitHub repos (fork + agents).
 
@@ -159,17 +158,16 @@ rather than committed into the tree. Each patch is a GitHub PR `.diff` on a fork
 
 ### Patch sets
 
-- **`PATCHES` (base)** — general fixes/features, from [os2ai/open-webui](https://github.com/os2ai/open-webui/pulls)`
-- **`PATCHES_OS2`** — OS2ai only patches
+- **`PATCHES`** — the os2ai patch set, from [os2ai/open-webui](https://github.com/os2ai/open-webui/pulls)
 
 ### Applying patches
 
 ```bash
 task git:reset        # clean checkout at OPEN_WEBUI_VERSION
-task patch:os2ai     # patch:os2ai or patch:base
+task patches:apply    # fetch each patch PR .diff and git-apply it
 ```
 
-Downloaded snapshots for offline reference / review live under `patches/<version>/{base,aarhus,os2}/` (populate with
+Downloaded snapshots for offline reference / review live under `patches/<version>/` (populate with
 `task patches:download`). We download these patches to ensure re-patching older version is possible.
 
 ### Rebasing onto a new upstream release
@@ -180,10 +178,21 @@ Downloaded snapshots for offline reference / review live under `patches/<version
 4. `task patches:rebase` — for each branch: `git rebase --onto upstream/<new> upstream/<prev>`. Resolve conflicts per
    branch.
 5. `task patches:force` to publish the rebased branches (force-push).
-6. `task patches:download` to refresh the offline snapshots.
-7. Reinstall / rebuild and verify.
+6. Publish the new base branch and retarget every patch PR to it — the PRs base on `upstream/v<version>` branches, not
+   tags:
+   ```bash
+   cd open-webui
+   git push origin refs/tags/<new>:refs/heads/upstream/<new>       # e.g. refs/tags/v0.13.3
+   gh api -X PATCH repos/os2ai/open-webui/pulls/<N> -f base=upstream/<new>   # once per PR
+   ```
+   Until this is done, each PR's `.diff` is still computed against the OLD base and contains all of upstream's
+   intermediate changes (often >100k lines, which GitHub may also 403). This breaks both `patches:download` and
+   `patches:apply`, since the applied artifact is the PR's `.diff`.
+7. `task patches:download` to refresh the offline snapshots. Sanity-check they shrank back to patch-only hunks
+   (`git diff --stat patches/` — a bump should not add upstream files).
+8. Reinstall / rebuild and verify.
 
-Very often this is not possible to automate, has the upstream core changes too much between release, so step 4 to 6 
+Very often this is not possible to automate, has the upstream core changes too much between release, so step 4 to 7 
 have to be done, one patch at a time, by hand.
 
 ### Contribution rules
